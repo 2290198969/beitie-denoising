@@ -1,0 +1,30 @@
+# 快速 smoke test 配置
+# 用来验证训练管道是否能跑通，只跑2个epoch
+
+data:
+  train_dir: "data/raw"
+  test_dir: "data/test"
+  patch_size: 128
+  noise_level: "medium"
+  num_workers: 0           # Windows下 0 最稳，避免多进程问题
+
+model:
+  name: "unet"
+  in_channels: 1
+  out_channels: 1
+  base_ch: 32
+  residual: true
+
+train:
+  epochs: 2                # 只跑2个epoch
+  batch_size: 8
+  lr: 0.001
+  lr_scheduler: "cosine"
+  weight_decay: 0.0001
+  save_every: 1
+  log_every: 20
+
+output:
+  checkpoint_dir: "checkpoints"
+  result_dir: "results"
+  log_dir: "runs"

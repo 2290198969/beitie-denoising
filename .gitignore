@@ -1,0 +1,43 @@
+# Alma
+.alma-snapshots/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Data & checkpoints (太大，不传 GitHub)
+data/raw/*
+data/noisy/*
+data/test/*
+!data/raw/.gitkeep
+!data/noisy/.gitkeep
+!data/test/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+results/*
+!results/.gitkeep
+
+# Logs
+runs/
+*.log
+*.out
+
+# Large files / datasets
+*.tar.gz
+*.zip
+*.rar
+*.7z
+test.png
+
+# OS
+.DS_Store
+Thumbs.db
