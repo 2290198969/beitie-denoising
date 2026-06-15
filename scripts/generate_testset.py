@@ -18,13 +18,20 @@ from PIL import Image
 # 复用生成脚本的函数
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scripts.generate_data import generate_single_char_image, generate_multi_char_image, generate_calligraphy_style, invert_image
+from scripts.generate_data import (
+    generate_single_char_image, generate_multi_char_image,
+    generate_calligraphy_style, invert_image, get_font_paths
+)
+import scripts.generate_data as gd
 from utils.noise import add_composite_noise
 
 
 def main():
     random.seed(123)
     np.random.seed(123)
+    
+    # 初始化字体（generate_data.py 里的函数依赖 FONT_PATHS）
+    gd.FONT_PATHS = get_font_paths()
     
     num = 50  # 测试集50张够了
     size = 256

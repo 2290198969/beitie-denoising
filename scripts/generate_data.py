@@ -20,6 +20,8 @@
 """
 
 import os
+import sys
+import platform
 import random
 import argparse
 import numpy as np
@@ -37,13 +39,57 @@ COMMON_CHARS = (
     "春风化雨秋水长天白云苍狗沧海桑田物是人非事如春梦"
 )
 
-# Windows 字体路径（楷体系列最像碑帖）
-FONT_PATHS = [
-    "C:/Windows/Fonts/simkai.ttf",      # 楷体
-    "C:/Windows/Fonts/STKAITI.TTF",      # 华文楷体
-    "C:/Windows/Fonts/simfang.ttf",      # 仿宋
-    "C:/Windows/Fonts/STFANGSO.TTF",     # 华文仿宋
-]
+# 根据操作系统选择字体路径
+def get_font_paths():
+    """自动检测可用的中文字体"""
+    if platform.system() == 'Windows':
+        candidates = [
+            "C:/Windows/Fonts/simkai.ttf",      # 楷体
+            "C:/Windows/Fonts/STKAITI.TTF",      # 华文楷体
+            "C:/Windows/Fonts/simfang.ttf",      # 仿宋
+            "C:/Windows/Fonts/STFANGSO.TTF",     # 华文仿宋
+        ]
+    else:
+        # Linux: 尝试常见路径
+        candidates = [
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",       # 文泉驿正黑
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",     # 文泉驿微米黑
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        ]
+    
+    found = [p for p in candidates if os.path.exists(p)]
+    
+    if not found:
+        # 最后的兜底：用 PIL 默认字体（不支持中文，但至少不崩）
+        # 尝试 fc-list 找字体
+        if platform.system() != 'Windows':
+            import subprocess
+            try:
+                result = subprocess.run(['fc-list', ':lang=zh', 'file'],
+                                       capture_output=True, text=True, timeout=5)
+                for line in result.stdout.strip().split('\n'):
+                    path = line.split(':')[0].strip()
+                    if path and os.path.exists(path):
+                        found.append(path)
+                        if len(found) >= 3:
+                            break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+    
+    if not found:
+        print("[WARNING] 没找到中文字体！请安装：")
+        print("  Ubuntu/Debian: sudo apt install fonts-wqy-zenhei")
+        print("  CentOS/RHEL:   sudo yum install wqy-zenhei-fonts")
+        sys.exit(1)
+    
+    print(f"[Font] 找到 {len(found)} 个可用字体: {[os.path.basename(f) for f in found]}")
+    return found
+
+
+FONT_PATHS = None  # 延迟初始化，在 main() 里调用 get_font_paths()
 
 
 def get_random_text(min_chars=1, max_chars=12):
@@ -157,6 +203,10 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     os.makedirs(args.output, exist_ok=True)
+    
+    # 初始化字体路径
+    global FONT_PATHS
+    FONT_PATHS = get_font_paths()
     
     print(f"开始生成 {args.num} 张训练图...")
     print(f"  尺寸: {args.size}×{args.size}")
