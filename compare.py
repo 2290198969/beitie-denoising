@@ -116,6 +116,17 @@ def make_method_callable(method, args, device):
                            num_layers=args.dncnn_layers,
                            num_features=args.dncnn_features)
         return lambda img: _model_infer(model, img, device)
+    if method == 'unet_cbam':
+        if not args.unet_cbam_ckpt:
+            raise ValueError("使用 unet_cbam 必须传 --unet_cbam_ckpt")
+        from models.unet_cbam import UNetCBAM
+        model = UNetCBAM(in_channels=1, out_channels=1,
+                         base_ch=args.unet_base_ch, residual=True).to(device)
+        state = torch.load(args.unet_cbam_ckpt, map_location=device)
+        model.load_state_dict(state['model_state_dict'] if 'model_state_dict' in state else state)
+        model.eval()
+        print(f"[UNet+CBAM] 加载 {args.unet_cbam_ckpt}")
+        return lambda img: _model_infer(model, img, device)
     raise ValueError(f"未知方法 {method}")
 
 
@@ -162,6 +173,9 @@ def main():
     parser.add_argument('--dncnn_ckpt', type=str, default=None)
     parser.add_argument('--dncnn_layers', type=int, default=17)
     parser.add_argument('--dncnn_features', type=int, default=64)
+
+    # U-Net + CBAM
+    parser.add_argument('--unet_cbam_ckpt', type=str, default=None)
 
     # 传统方法超参
     parser.add_argument('--median_ksize', type=int, default=3)

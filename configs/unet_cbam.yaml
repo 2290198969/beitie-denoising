@@ -1,0 +1,30 @@
+# U-Net + CBAM 训练配置
+# 与 configs/default.yaml 严格保持相同 hyperparameters，
+# 唯一区别就是模型多了 CBAM。这样对比才公平。
+
+data:
+  train_dir: "data/raw"
+  test_dir: "data/test"
+  patch_size: 128
+  noise_level: "random"
+  num_workers: 4
+
+model:
+  name: "unet_cbam"
+  in_channels: 1
+  out_channels: 1
+  base_ch: 32
+  residual: true
+  cbam_ratio: 16        # CBAM 通道注意力压缩比
+
+train:
+  epochs: 100           # 与原 U-Net 一致
+  batch_size: 8         # 与原 U-Net 一致
+  lr: 0.001
+  lr_scheduler: "cosine"
+  weight_decay: 0.0001
+  save_every: 10
+  log_every: 50
+
+output:
+  checkpoint_dir: "checkpoints"

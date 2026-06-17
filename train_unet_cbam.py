@@ -1,0 +1,149 @@
+"""
+U-Net + CBAM 训练脚本
+=====================
+和 train.py 完全一样的训练流程，只是把模型从 UNet 换成 UNetCBAM，
+便于和原版做严格的"控制变量"对比实验。
+
+用法:
+    本机冒烟测试:
+        python train_unet_cbam.py --config configs/unet_cbam_smoke.yaml
+
+    服务器正式训练:
+        python train_unet_cbam.py --config configs/unet_cbam.yaml
+"""
+
+import os
+import argparse
+import yaml
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from models.unet_cbam import UNetCBAM
+from utils.dataset import DenoisingDataset
+from utils.metrics import AverageMeter
+
+
+def load_config(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def train_one_epoch(model, loader, optimizer, criterion, device, log_every=50):
+    model.train()
+    loss_meter = AverageMeter()
+    for i, (noisy, clean) in enumerate(loader):
+        noisy, clean = noisy.to(device), clean.to(device)
+        out = model(noisy)
+        loss = criterion(out, clean)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        loss_meter.update(loss.item(), noisy.size(0))
+        if (i + 1) % log_every == 0:
+            print(f"    [Batch {i+1}/{len(loader)}] Loss: {loss_meter.val:.6f} "
+                  f"(avg: {loss_meter.avg:.6f})")
+    return loss_meter.avg
+
+
+def main():
+    parser = argparse.ArgumentParser(description='碑帖去噪 - U-Net+CBAM 训练')
+    parser.add_argument('--config', type=str, default='configs/unet_cbam.yaml')
+    parser.add_argument('--resume', type=str, default=None)
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"设备: {device}")
+    if device.type == 'cuda':
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+
+    # 数据集（和原 U-Net、DnCNN 共用同一个 Dataset 类，保证训练数据完全一致）
+    ds = DenoisingDataset(
+        data_dir=cfg['data']['train_dir'],
+        patch_size=cfg['data']['patch_size'],
+        noise_level=cfg['data']['noise_level'],
+        augment=True,
+    )
+    loader = DataLoader(
+        ds, batch_size=cfg['train']['batch_size'],
+        shuffle=True, num_workers=cfg['data']['num_workers'],
+        pin_memory=True, drop_last=True,
+    )
+    print(f"训练: {len(ds)} patches/epoch, batch={cfg['train']['batch_size']}")
+
+    # U-Net + CBAM
+    model = UNetCBAM(
+        in_channels=cfg['model']['in_channels'],
+        out_channels=cfg['model']['out_channels'],
+        base_ch=cfg['model']['base_ch'],
+        residual=cfg['model']['residual'],
+        ratio=cfg['model'].get('cbam_ratio', 16),
+    ).to(device)
+    n_params = sum(p.numel() for p in model.parameters()) / 1e6
+    print(f"U-Net+CBAM 参数量: {n_params:.3f} M")
+
+    # 与 train.py 同样的优化器/调度器/Loss，公平对比
+    criterion = nn.L1Loss()
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=cfg['train']['lr'],
+        weight_decay=cfg['train']['weight_decay'],
+    )
+    scheduler = CosineAnnealingLR(
+        optimizer, T_max=cfg['train']['epochs'], eta_min=1e-6
+    )
+
+    start_epoch = 0
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=device)
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start_epoch = ckpt['epoch'] + 1
+        print(f"从 epoch {start_epoch} 恢复")
+
+    ckpt_dir = cfg['output']['checkpoint_dir']
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    best_loss = float('inf')
+    print(f"\n{'='*50}")
+    print(f"U-Net+CBAM 训练开始! 共 {cfg['train']['epochs']} epoch")
+    print(f"{'='*50}\n")
+
+    for epoch in range(start_epoch, cfg['train']['epochs']):
+        lr = optimizer.param_groups[0]['lr']
+        print(f"[Epoch {epoch+1}/{cfg['train']['epochs']}] lr={lr:.6f}")
+        train_loss = train_one_epoch(
+            model, loader, optimizer, criterion, device,
+            log_every=cfg['train'].get('log_every', 50)
+        )
+        scheduler.step()
+        print(f"  -> Loss: {train_loss:.6f}")
+
+        is_best = train_loss < best_loss
+        if is_best:
+            best_loss = train_loss
+
+        if (epoch + 1) % cfg['train']['save_every'] == 0 or is_best:
+            payload = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': train_loss,
+            }
+            if (epoch + 1) % cfg['train']['save_every'] == 0:
+                p = os.path.join(ckpt_dir, f'unet_cbam_epoch_{epoch+1}.pth')
+                torch.save(payload, p)
+                print(f"  -> Saved: {p}")
+            if is_best:
+                p = os.path.join(ckpt_dir, 'unet_cbam_best.pth')
+                torch.save(payload, p)
+                print(f"  -> Best! (loss={best_loss:.6f})")
+        print()
+
+    print("U-Net+CBAM 训练完成!")
+
+
+if __name__ == "__main__":
+    main()
